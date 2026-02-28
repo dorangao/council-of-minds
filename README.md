@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+This implementation is based on my article [The Council of Minds](https://medium.com/@dorangao/the-council-of-minds-4a4a3caddf65).
+
 ## Getting Started
 
 First, run the development server:
