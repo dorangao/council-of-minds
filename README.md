@@ -1,38 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Council of Minds
 
-This implementation is based on my article [The Council of Minds](https://medium.com/@dorangao/the-council-of-minds-4a4a3caddf65).
+AI-powered decision system built with Next.js + TypeScript.
 
-## Getting Started
+This app turns one question into a structured decision workflow:
 
-First, run the development server:
+1. Capture structured input (`context`, `decision criteria`, `assumptions`, `risks`)
+2. Route with a high-level orchestrator (scenario detector)
+3. Pull external evidence with Tavily
+4. Run multi-persona advisory round + debate + red team
+5. Consolidate into recommendation, scorecard, memo, confidence, and uncertainties
+6. Export a Markdown decision log
+7. Generate a comparison-ready analysis record (Council vs Real decision)
+
+## Stack
+
+- Next.js (App Router), TypeScript
+- OpenAI Responses API
+- LangGraph (`@langchain/langgraph`) for orchestration
+- Tavily Search API for external research grounding
+
+## Environment Variables
+
+Create `.env.local`:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+OPENAI_API_KEY=your_openai_key
+TAVILY_API_KEY=your_tavily_key
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`TAVILY_API_KEY` is optional, but strongly recommended for evidence-backed outputs.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Run
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+npm run dev
+```
 
-## Learn More
+Open [http://localhost:3000](http://localhost:3000).
 
-To learn more about Next.js, take a look at the following resources:
+## API
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `POST /api/meeting`
+  - Input:
+    - `question` (required)
+    - `context` (optional)
+    - `decisionCriteria` (optional)
+    - `assumptions` (optional)
+    - `risks` (optional)
+  - Returns:
+    - `scenario` routing decision
+    - `research` (Tavily snapshot)
+    - `brief`
+    - `meeting` advisor outputs
+    - `unified` moderator output
+    - `confidenceScore`
+    - `keyUncertainties`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `POST /api/decision-log`
+  - Input: meeting payload
+  - Returns: downloadable Markdown memo (`.md`)
 
-## Deploy on Vercel
+- `POST /api/analysis-record`
+  - Input: meeting payload + optional `realDecision`, `evidenceNotes`, `decisionId`
+  - Returns: downloadable markdown analysis record (`.md`) for decision-quality comparison
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Architecture
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+High-level architecture is documented in:
+
+- [docs/ARCHITECTURE.md](/Users/dorangao/study/council-of-minds/docs/ARCHITECTURE.md)
+
+## Key Files
+
+- [lib/meeting.ts](/Users/dorangao/study/council-of-minds/lib/meeting.ts): LangGraph workflow
+- [lib/orchestrator.ts](/Users/dorangao/study/council-of-minds/lib/orchestrator.ts): scenario detector + prompt routing
+- [lib/research.ts](/Users/dorangao/study/council-of-minds/lib/research.ts): Tavily integration
+- [lib/prep.ts](/Users/dorangao/study/council-of-minds/lib/prep.ts): decision brief extractor
+- [lib/consolidate.ts](/Users/dorangao/study/council-of-minds/lib/consolidate.ts): moderator synthesis
+- [lib/analysis-record.ts](/Users/dorangao/study/council-of-minds/lib/analysis-record.ts): council vs real-world analysis generation
+- [app/page.tsx](/Users/dorangao/study/council-of-minds/app/page.tsx): structured input UI
+
+## Repository Structure
+
+- [decisions](/Users/dorangao/study/council-of-minds/decisions): normalized decision baselines
+- [records](/Users/dorangao/study/council-of-minds/records): analysis outputs and comparisons
+- [evidence](/Users/dorangao/study/council-of-minds/evidence): source artifacts for validation

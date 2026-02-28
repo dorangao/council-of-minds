@@ -10,12 +10,35 @@ type PersonaResult = {
   critique?: string;
 };
 
+type ScenarioPlan = {
+  type?: string;
+  rationale?: string;
+};
+
+type ResearchResult = {
+  query?: string;
+  answer?: string;
+  results?: {
+    title?: string;
+    url?: string;
+    content?: string;
+    score?: number;
+  }[];
+};
+
 type DecisionLogRequest = {
   question?: unknown;
   context?: unknown;
+  decisionCriteria?: unknown;
+  assumptions?: unknown;
+  risks?: unknown;
+  scenario?: unknown;
+  research?: unknown;
   brief?: unknown;
   meeting?: unknown;
   unified?: unknown;
+  confidenceScore?: unknown;
+  keyUncertainties?: unknown;
   generatedAt?: unknown;
 };
 
@@ -61,6 +84,69 @@ function toMeeting(value: unknown): PersonaResult[] {
   });
 }
 
+function toScenario(value: unknown): ScenarioPlan | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return {
+    type: toOptionalText(candidate.type),
+    rationale: toOptionalText(candidate.rationale),
+  };
+}
+
+function toResearch(value: unknown): ResearchResult[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    const candidate = entry as Record<string, unknown>;
+    const query = toOptionalText(candidate.query);
+    if (!query) {
+      return [];
+    }
+
+    const answer = toOptionalText(candidate.answer);
+    const results = Array.isArray(candidate.results)
+      ? candidate.results.flatMap((result) => {
+          if (!result || typeof result !== "object") {
+            return [];
+          }
+
+          const row = result as Record<string, unknown>;
+          const title = toOptionalText(row.title);
+          const url = toOptionalText(row.url);
+          const content = toOptionalText(row.content);
+          const score = typeof row.score === "number" ? row.score : undefined;
+
+          if (!title || !url || !content) {
+            return [];
+          }
+
+          return [{ title, url, content, score }];
+        })
+      : [];
+
+    return [{ query, answer, results }];
+  });
+}
+
+function toTextArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .flatMap((entry) => (typeof entry === "string" ? [entry.trim()] : []))
+    .filter((entry) => entry.length > 0);
+}
+
 function slugify(input: string): string {
   const slug = input
     .toLowerCase()
@@ -87,9 +173,16 @@ function extractExecutiveSummary(unified: string): string {
 function buildMarkdown(payload: {
   question: string;
   context?: string;
+  decisionCriteria?: string;
+  assumptions?: string;
+  risks?: string;
+  scenario: ScenarioPlan | null;
+  research: ResearchResult[];
   brief?: string;
   meeting: PersonaResult[];
   unified?: string;
+  confidenceScore?: string;
+  keyUncertainties: string[];
   generatedAt: string;
 }): string {
   const advisorSection =
@@ -109,6 +202,35 @@ ${advisor.critique ?? "(none)"}
           .join("\n\n")
       : "_No advisor output._";
 
+  const researchSection =
+    payload.research.length > 0
+      ? payload.research
+          .map((entry) => {
+            const list =
+              entry.results && entry.results.length > 0
+                ? entry.results
+                    .map(
+                      (result, index) =>
+                        `${index + 1}. [${result.title}](${result.url})\n   - ${result.content}`,
+                    )
+                    .join("\n")
+                : "_No source results._";
+
+            return `
+### Query: ${entry.query}
+Summary: ${entry.answer ?? "(none)"}
+
+${list}
+`.trim();
+          })
+          .join("\n\n")
+      : "_No external research was attached._";
+
+  const uncertaintySection =
+    payload.keyUncertainties.length > 0
+      ? payload.keyUncertainties.map((item) => `- ${item}`).join("\n")
+      : "_None captured._";
+
   const unified = payload.unified ?? "";
   const executiveSummary = extractExecutiveSummary(unified);
 
@@ -123,15 +245,40 @@ Question: ${payload.question}
 
 ${executiveSummary}
 
+Confidence: ${payload.confidenceScore ?? "Unknown"}
+
+## Key Uncertainties
+
+${uncertaintySection}
+
 ---
 
-## Input
+## Structured Input
 
 ### Question
 ${payload.question}
 
-### Context
+### Context (Facts)
 ${payload.context ?? "(none)"}
+
+### Decision Criteria
+${payload.decisionCriteria ?? "(none)"}
+
+### Assumptions
+${payload.assumptions ?? "(none)"}
+
+### Risks
+${payload.risks ?? "(none)"}
+
+## Orchestrator Routing
+
+Scenario type: ${payload.scenario?.type ?? "(none)"}
+
+Rationale: ${payload.scenario?.rationale ?? "(none)"}
+
+## Research Snapshot
+
+${researchSection}
 
 ## Decision Brief
 
@@ -159,9 +306,16 @@ export async function POST(req: Request) {
     const payload = {
       question,
       context: toOptionalText(body.context),
+      decisionCriteria: toOptionalText(body.decisionCriteria),
+      assumptions: toOptionalText(body.assumptions),
+      risks: toOptionalText(body.risks),
+      scenario: toScenario(body.scenario),
+      research: toResearch(body.research),
       brief: toOptionalText(body.brief),
       meeting: toMeeting(body.meeting),
       unified: toOptionalText(body.unified),
+      confidenceScore: toOptionalText(body.confidenceScore),
+      keyUncertainties: toTextArray(body.keyUncertainties),
       generatedAt: toOptionalText(body.generatedAt) ?? new Date().toISOString(),
     };
 

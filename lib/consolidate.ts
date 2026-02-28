@@ -1,14 +1,16 @@
-import { getOpenAIClient } from "@/lib/openai";
 import { MODELS } from "@/lib/config";
-import type { PersonaResult } from "@/lib/meeting";
+import { getOpenAIClient } from "@/lib/openai";
+import { formatResearchForPrompt } from "@/lib/research";
+import type { MeetingInput, PersonaResult, ResearchResult, ScenarioPlan } from "@/lib/types";
 
 export async function consolidate(params: {
-  question: string;
-  context?: string;
+  input: MeetingInput;
   brief: string;
   results: PersonaResult[];
+  scenario: ScenarioPlan;
+  research: ResearchResult[];
 }): Promise<string> {
-  const { question, context, brief, results } = params;
+  const { input, brief, results, scenario, research } = params;
   const openai = getOpenAIClient();
 
   const transcript = results
@@ -38,26 +40,44 @@ Goals:
 - Combine perspectives into one coherent plan.
 - Preserve useful disagreements as explicit tradeoffs.
 - Output must be practical, specific, and executable.
+- Explicitly separate evidence, assumptions, and uncertainty.
 
 Rules:
 - Do NOT invent facts; if unsure, label assumptions.
-- Prefer checklists over vague inspiration.
-- Keep language crisp.
+- Include confidence and key uncertainties.
+- Keep language crisp and operational.
 `.trim(),
       },
       {
         role: "user",
         content: `
+Question:
+${input.question}
+
+Context:
+${input.context ?? "(none)"}
+
+Decision Criteria:
+${input.decisionCriteria ?? "(none)"}
+
+Assumptions:
+${input.assumptions ?? "(none)"}
+
+Risks:
+${input.risks ?? "(none)"}
+
+Scenario Routing:
+- Type: ${scenario.type}
+- Rationale: ${scenario.rationale}
+- Moderator Guidance: ${scenario.moderatorAddendum}
+
 Decision Brief:
 ${brief}
 
-Question:
-${question}
+External Research:
+${formatResearchForPrompt(research)}
 
-Context:
-${context ?? "(none)"}
-
-Advisor inputs:
+Advisor Inputs:
 ${transcript}
 
 Produce EXACTLY these sections:
@@ -78,26 +98,64 @@ Score each option on:
 - Complexity
 Then: "Scorecard winner: ___"
 
-4) DECISION MEMO
+4) DEBATE SUMMARY
+
+5) CONTRARIAN ANALYSIS
+
+6) DECISION MEMO
 - Problem
 - Constraints
 - Tradeoffs
 - Decision
 - Why now
 
-5) RED FLAGS / ASSUMPTIONS TO VERIFY
+7) RED FLAGS / ASSUMPTIONS TO VERIFY
 
-6) HEDGE PLAN (if we're wrong)
+8) HEDGE PLAN (if we're wrong)
 
-7) NEXT STEPS (owners + time horizons)
+9) NEXT STEPS (owners + time horizons)
 Format:
 - [Now] (Owner: You) ...
 - [This week] (Owner: You) ...
 - [This month] (Owner: You) ...
+
+10) CONFIDENCE SCORE (0-100)
+Format exactly:
+Confidence: <number>/100
+Reason:
+
+11) KEY UNCERTAINTIES (up to 5 bullets)
 `.trim(),
       },
     ],
   });
 
   return response.output_text?.trim() ?? "";
+}
+
+export function extractConfidenceScore(unified: string): string {
+  const match = unified.match(/Confidence:\s*(\d{1,3})\s*\/\s*100/i);
+  if (!match?.[1]) {
+    return "Unknown";
+  }
+
+  const numeric = Math.max(0, Math.min(100, Number(match[1])));
+  return `${numeric}/100`;
+}
+
+export function extractKeyUncertainties(unified: string): string[] {
+  const sectionMatch = unified.match(
+    /11\)\s*KEY UNCERTAINTIES[\s\S]*?(?=\n\d+\)\s*[A-Z]|\s*$)/i,
+  );
+
+  if (!sectionMatch?.[0]) {
+    return [];
+  }
+
+  return sectionMatch[0]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[-*]\s+/.test(line))
+    .map((line) => line.replace(/^[-*]\s+/, ""))
+    .slice(0, 5);
 }
